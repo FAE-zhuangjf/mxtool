@@ -4,137 +4,125 @@
 #include <winsock.h>
 #include <string.h>
 
-void speed_add(int bytes)
+#include <net.h>
+
+DWORD bytes_in_3_seconds = 0;
+
+DWORD WINAPI thread_monitor(void *arg)
 {
-	static DWORD pretick = 0;
-	static DWORD total3s = 0;
+	FILE *output = NULL;
+	fopen_s(&output, "plot.txt", "w+");
+    int line = 0;
+    int flush_interval = 0;
+    
+    while(1)
+    {
+        Sleep(100);
 
-	static DWORD total_bytes = 0, test_cnt = 0;
-	DWORD average_speed;
-	static DWORD high_speed=0, low_speed=0;
+        fprintf(output, "%d %d\n", line++, bytes_in_3_seconds/3);
 
-	DWORD tmp_speed;
+        bytes_in_3_seconds = 0;
 
-	total_bytes += bytes;
+        if(flush_interval++ >= 10)
+        {
+            fflush(output);
+        }
+    }
 
-	total3s += bytes;
+    fclose(output);
+}
 
-	if (pretick + 3000 < GetTickCount())
-	{
-		if (0 == pretick)
+
+DWORD WINAPI thread_client(void *arg)
+{
+    int ret;
+
+    int clientfd = (int)arg;
+    
+    PCHAR recvbuf = (PCHAR)malloc(1024);
+    
+    while(1)
+    {
+        ret = recv(clientfd, recvbuf, 1024, 0);
+		if (ret > 0)
 		{
-			pretick = GetTickCount();
+			bytes_in_3_seconds += ret;
 		}
-		else
-		{
-			tmp_speed = (total3s >> 10) / ((GetTickCount() - pretick) / 1000);
-			printf("speed >> %d kB/s\n", tmp_speed);
+        else
+        {
+            printf("client close\n");
+            break;
+        }
+    }
 
-			test_cnt++;
+    closesocket(clientfd);
 
-			average_speed = (total3s >> 10) / ((GetTickCount() - pretick) / 1000);
+    free(recvbuf);
 
-			total3s = 0;
-			pretick = GetTickCount();
-		}
-	}
+    ExitThread(0);
 }
 
 int main()
 {
-	int iServerSock;
-	int iClientSock;
+	int svrfd;
+	int clientfd;
 	int ret;
-	PCHAR recvbuf;
-	struct sockaddr_in ServerAddr;
-	struct sockaddr_in ClientAddr;
-
-	unsigned char *start = NULL;
-
-	recvbuf = (PCHAR)malloc(1024);
+	
+	struct sockaddr_in svraddr;
+	struct sockaddr_in clientaddr;
 
 	int sin_size;
 
-	WSADATA WSAData;
+	net_init();
 
-	if (WSAStartup(MAKEWORD(1, 1), &WSAData))//³õÊ¼»¯
-	{
-		printf("initializationing error!\n");
-		WSACleanup();
-		exit(0);
-	}
+    svrfd = socket(AF_INET, SOCK_STREAM, 0);
 
-	printf("WSA init ok\n");
-
-	if ((iServerSock = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
+	if (INVALID_SOCKET == svrfd)
 	{
 		printf("socket create error!\n");
 		WSACleanup();
-		exit(0);
+		return -1;
 	}
 
-	printf("server created\n");
+	svraddr.sin_family = AF_INET;
+	svraddr.sin_port = htons(8080);
+	svraddr.sin_addr.s_addr = INADDR_ANY;
+	memset(&(svraddr.sin_zero), 0, sizeof(svraddr.sin_zero));
 
-	ServerAddr.sin_family = AF_INET;
-	ServerAddr.sin_port = htons(8080);
-	ServerAddr.sin_addr.s_addr = INADDR_ANY;
-	memset(&(ServerAddr.sin_zero), 0, sizeof(ServerAddr.sin_zero));
-
-	if (bind(iServerSock, (struct sockaddr *)&ServerAddr, sizeof(struct sockaddr)) == -1)
+    ret = bind(svrfd, (struct sockaddr *)&svraddr, sizeof(struct sockaddr));
+	if (-1 == ret)
 	{
 		printf("bind error!\n");
 		WSACleanup();
-		exit(0);
+		return -1;
 	}
 
-	printf("server bind ok\n");
-
-	if (listen(iServerSock, 10) == -1)
+    ret = listen(svrfd, 10);
+	if (-1 == ret)
 	{
 		printf("listen error!\n");
 		WSACleanup();
-		exit(0);
+		return -1;
 	}
-
-	printf("server listen ok\n");
 
 	sin_size = sizeof(struct sockaddr_in);
 
-	// suspend here
-	iClientSock = accept(iServerSock, (struct sockaddr *)&ClientAddr, &sin_size);
-	if (iClientSock == -1)
-	{
-		printf("accept error!\n");
-		WSACleanup();
-		exit(0);
-	}
-	else
-	{
-		int yes = 1;
-		//setsockopt(iClientSock, IPPROTO_TCP, TCP_NODELAY, (PCHAR)&yes, sizeof(yes));
-	}
+    CreateThread(NULL, 0, thread_monitor, NULL, 0, NULL);
 
-	printf("server accept one client\n");
-	printf("client: %s\n", inet_ntoa(ClientAddr.sin_addr));
+    while(1)
+    {
+        clientfd = accept(svrfd, (struct sockaddr *)&clientaddr, &sin_size);
 
-	while (1)
-	{
-		ret = recv(iClientSock, recvbuf, 1024, 0);
-		if (ret > 0)
-		{
-			//printf("recv %d bytes\n", ret);
-			speed_add(ret);
-		}
-		else
-		{
-			printf("recv error\n");
-			break;
-		}
-	}
+        printf("client addr: %s\n", inet_ntoa(clientaddr.sin_addr));
 
-	printf("server quit\n");
+        if(-1 != clientfd)
+        {
+            CreateThread(NULL, 0, thread_client, (void*)clientfd, 0, NULL);
+        }
+    }
 
 	WSACleanup();
-	free(recvbuf);
+	
 	return 0;
 }
+

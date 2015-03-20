@@ -1,0 +1,1 @@
+plot "./plot.txt" with line

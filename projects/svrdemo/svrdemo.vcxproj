@@ -82,7 +82,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\demos\svrdemo\cmd.cpp" />
+    <ClCompile Include="..\..\demos\svrdemo\info.cpp" />
+    <ClCompile Include="..\..\demos\svrdemo\line.cpp" />
     <ClCompile Include="..\..\demos\svrdemo\main.cpp" />
+    <ClCompile Include="..\..\demos\svrdemo\thread_tcpsvrdemo.cpp" />
     <ClCompile Include="..\..\plaform\net.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
